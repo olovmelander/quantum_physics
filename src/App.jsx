@@ -1,61 +1,135 @@
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Environment, Effects, Float, Stars, Html, Text } from "@react-three/drei";
-import { Physics, RigidBody, CylinderCollider, CuboidCollider, useRevoluteJoint, usePointToPointJoint } from "@react-three/rapier";
-import * as THREE from 'three';
+import { Physics, RigidBody, CylinderCollider, CuboidCollider, useSphericalJoint } from "@react-three/rapier";
+import * as THREE from "three";
 
 /**
+ * BUCK: Browser Prototype (WebGL)
+ *
+ * Stack: react-three-fiber + @react-three/rapier physics
+ *
+ * Controls:
+ * W/S: move forward/back (Buck intent)
+ * A/D: steer
+ * Shift: Pull (burst)
+ * Ctrl: Brake
+ * Q: Instinct Mode toggle
+ * R: Rest (faster recovery)
+ *
+ * This is a simplified demo that captures the feel: pulling a sled with friction zones,
+ * a diegetic stamina/struggle meter, and an Instinct view that reveals safe paths.
+ */
+function useKeyboard() {
+  const [keys, setKeys] = useState({});
 
-BUCK: Browser Prototype (WebGL)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      setKeys((state) => ({ ...state, [event.code]: true }));
+    };
 
-Stack: react-three-fiber + @react-three/rapier physics
+    const handleKeyUp = (event) => {
+      setKeys((state) => ({ ...state, [event.code]: false }));
+    };
 
-Controls:
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
 
-W/S: move forward/back (Buck intent)
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
 
+  return keys;
+}
 
-A/D: steer
+// Surface zones with different resistance/turn control
+const ZONES = [
+  { pos: [0, 0, 0], size: [60, 1, 60], type: "packed", color: "#aaccee" }, // packed snow main lake
+  { pos: [0, 0, -40], size: [20, 1, 30], type: "ice", color: "#dff6ff" }, // slippery ice patch
+  { pos: [10, 0, 35], size: [35, 1, 25], type: "deep", color: "#e6f1f9" }, // deep snow
+  { pos: [0, 0, 90], size: [18, 1, 90], type: "path", color: "#bcd6ff" }, // uphill path strip
+];
 
+function surfaceParams(type) {
+  switch (type) {
+    case "deep":
+      return { drag: 18, turn: 1.2, brake: 1.6 };
+    case "packed":
+      return { drag: 6, turn: 0.8, brake: 0.9 };
+    case "ice":
+      return { drag: 2, turn: 0.35, brake: 0.25 };
+    case "path":
+      return { drag: 4, turn: 0.9, brake: 0.9 };
+    default:
+      return { drag: 8, turn: 1, brake: 1 };
+  }
+}
 
-Shift: Pull (burst)
+function Zone({ zone, instinct }) {
+  return (
+    <mesh position={[zone.pos[0], -0.49, zone.pos[2]]} receiveShadow>
+      <boxGeometry args={[zone.size[0], 0.02, zone.size[2]]} />
+      <meshStandardMaterial
+        color={instinct ? zone.color : "#ffffff"}
+        transparent
+        opacity={instinct ? 0.5 : 0.08}
+      />
+    </mesh>
+  );
+}
 
+function Terrain() {
+  const mounds = useMemo(
+    () =>
+      Array.from({ length: 30 }, (_, index) => ({
+        id: `mound-${index}`,
+        position: [Math.sin(index) * 60, 0.5, Math.cos(index * 1.7) * 60],
+        radius: Math.random() * 1.4 + 0.6,
+      })),
+    [],
+  );
 
-Ctrl: Brake
+  return (
+    <group>
+      {/* Ground */}
+      <mesh rotation-x={-Math.PI / 2} receiveShadow>
+        <planeGeometry args={[200, 200, 1, 1]} />
+        <meshStandardMaterial color="#ffffff" />
+      </mesh>
 
+      {/* Snow mounds / rocks */}
+      <Float speed={1} rotationIntensity={0.05} floatIntensity={0.2}>
+        <group>
+          {mounds.map((mound) => (
+            <mesh key={mound.id} position={mound.position} castShadow>
+              <icosahedronGeometry args={[mound.radius, 1]} />
+              <meshStandardMaterial roughness={1} metalness={0} color="#dfe7ef" />
+            </mesh>
+          ))}
+        </group>
+      </Float>
+    </group>
+  );
+}
 
-Q: Instinct Mode toggle
-
-
-R: Rest (faster recovery)
-
-
-This is a simplified demo that captures the feel: pulling a sled with friction zones,
-
-a diegetic stamina/struggle meter, and an Instinct view that reveals safe paths. */
-
-
-function useKeyboard() { const [keys, set] = useState({}); useEffect(() => { const down = (e) => set((k) => ({ ...k, [e.code]: true })); const up = (e) => set((k) => ({ ...k, [e.code]: false })); window.addEventListener("keydown", down); window.addEventListener("keyup", up); return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); }; }, []); return keys; }
-
-// Surface zones with different resistance/turn control const ZONES = [ { pos: [0, 0, 0], size: [60, 1, 60], type: "packed", color: "#aaccee" },        // packed snow main lake { pos: [0, 0, -40], size: [20, 1, 30], type: "ice", color: "#dff6ff" },          // slippery ice patch { pos: [10, 0, 35], size: [35, 1, 25], type: "deep", color: "#e6f1f9" },         // deep snow { pos: [0, 0, 90], size: [18, 1, 90], type: "path", color: "#bcd6ff" },          // uphill path strip ];
-
-function surfaceParams(type) { switch (type) { case "deep": return { drag: 18, turn: 1.2, brake: 1.6 }; case "packed": return { drag: 6, turn: 0.8, brake: 0.9 }; case "ice": return { drag: 2, turn: 0.35, brake: 0.25 }; case "path": return { drag: 4, turn: 0.9, brake: 0.9 }; default: return { drag: 8, turn: 1, brake: 1 }; } }
-
-function Zone({ zone, instinct }) { // Subtle visual — brighter in Instinct mode return ( <mesh position={[zone.pos[0], -0.49, zone.pos[2]]} receiveShadow> <boxGeometry args={[zone.size[0], 0.02, zone.size[2]]} /> <meshStandardMaterial color={instinct ? zone.color : "#ffffff"} transparent opacity={instinct ? 0.5 : 0.08} /> </mesh> ); }
-
-function Terrain() { return ( <group> {/* Ground /} <mesh rotation-x={-Math.PI / 2} receiveShadow> <planeGeometry args={[200, 200, 1, 1]} /> <meshStandardMaterial color="#ffffff" /> </mesh> {/* Snow mounds / rocks */} <Float speed={1} rotationIntensity={0.05} floatIntensity={0.2}> <group> {new Array(30).fill(0).map((_, i) => ( <mesh key={i} position={[Math.sin(i) * 60, 0.5, Math.cos(i * 1.7) * 60]} castShadow> <icosahedronGeometry args={[Math.random() * 1.4 + 0.6, 1]} /> <meshStandardMaterial roughness={1} metalness={0} color="#dfe7ef" /> </mesh> ))} </group> </Float> </group> ); }
-
-function Harness({ a, b }) { // simple visual rope between Buck (a) and sled (b)
+function Harness({ a, b }) {
+  // simple visual rope between Buck (a) and sled (b)
   const line = useRef();
+
   useFrame(() => {
     if (!a.current || !b.current || !line.current) return;
-    const pa = a.current.translation();
-    const pb = b.current.translation();
+
+    const buckPosition = a.current.translation();
+    const sledPosition = b.current.translation();
+
     line.current.geometry.setFromPoints([
-      new THREE.Vector3(pa.x, pa.y + 0.6, pa.z),
-      new THREE.Vector3(pb.x, pb.y + 0.5, pb.z)
+      new THREE.Vector3(buckPosition.x, buckPosition.y + 0.6, buckPosition.z),
+      new THREE.Vector3(sledPosition.x, sledPosition.y + 0.5, sledPosition.z),
     ]);
   });
+
   return (
     <line ref={line}>
       <bufferGeometry />
@@ -70,93 +144,123 @@ function BuckAndSled({ instinct, setInstinct, ui }) {
   const sled = useRef();
   const [stamina, setStamina] = useState(1);
   const [fatigue, setFatigue] = useState(0);
-  const [cargoKg, setCargoKg] = useState(80);
+  const cargoKg = 80;
   const [snag, setSnag] = useState(false);
 
-  // Revolute (hinge) joint to simulate the tug connection
-  usePointToPointJoint(buck, sled, { pivotA: { x: 0, y: 0.6, z: -0.5 }, pivotB: { x: 0, y: 0.5, z: 1.2 } });
+  // Point-to-point joint to simulate the tug connection
+  useSphericalJoint(buck, sled, [
+    [0, 0.6, -0.5],
+    [0, 0.5, 1.2],
+  ]);
 
-  // Utility: compute which zone Buck is on
-  const zoneAt = (p) => {
-    for (const z of ZONES) {
-      if (Math.abs(p.x - z.pos[0]) <= z.size[0] / 2 && Math.abs(p.z - z.pos[2]) <= z.size[2] / 2) return z;
+  const zoneAt = (position) => {
+    for (const zone of ZONES) {
+      if (
+        Math.abs(position.x - zone.pos[0]) <= zone.size[0] / 2 &&
+        Math.abs(position.z - zone.pos[2]) <= zone.size[2] / 2
+      ) {
+        return zone;
+      }
     }
     return null;
   };
 
   useFrame((state, dt) => {
     if (!buck.current || !sled.current) return;
-    const pBuck = buck.current.translation();
-    const zone = zoneAt(pBuck) || { type: "default" };
-    const surf = surfaceParams(zone.type);
+
+    const buckPosition = buck.current.translation();
+    const zone = zoneAt(buckPosition) || { type: "default" };
+    const surface = surfaceParams(zone.type);
 
     // Input
-    const forward = (keys["KeyW"] ? 1 : 0) + (keys["KeyS"] ? -1 : 0);
-    const steer = (keys["KeyA"] ? 1 : 0) + (keys["KeyD"] ? -1 : 0);
-    const pulling = keys["ShiftLeft"] || keys["ShiftRight"]; // Pull burst
-    const braking = keys["ControlLeft"] || keys["ControlRight"]; // Brake
+    const forwardInput = (keys.KeyW ? 1 : 0) + (keys.KeyS ? -1 : 0);
+    const steerInput = (keys.KeyA ? 1 : 0) + (keys.KeyD ? -1 : 0);
+    const pulling = keys.ShiftLeft || keys.ShiftRight;
+    const braking = keys.ControlLeft || keys.ControlRight;
+    const qPressed = Boolean(keys.KeyQ);
 
-    if (keys["KeyQ"]) setInstinct(true);
-    if (!keys["KeyQ"]) setInstinct(false);
+    setInstinct((prev) => (prev === qPressed ? prev : qPressed));
 
     // Orientation: face move direction smoothly
-    const cam = state.camera;
-    const fwd = new THREE.Vector3(); cam.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
-    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
-    const moveDir = new THREE.Vector3().addScaledVector(fwd, forward).addScaledVector(right, -steer).normalize();
+    const camera = state.camera;
+    const forwardVector = new THREE.Vector3();
+    camera.getWorldDirection(forwardVector);
+    forwardVector.y = 0;
+    forwardVector.normalize();
 
-    // Exertion affects stamina drain; fatigue reduces force
-    const exert = (pulling ? 1.0 : 0.6) * Math.max(0, forward);
-    const drain = (0.1 + surf.drag * 0.02) * exert * (1 + fatigue * 0.6);
-    const recovering = (!pulling && forward <= 0 && !braking) || keys["KeyR"]; // Rest
-    const recRate = keys["KeyR"] ? 0.6 : 0.22;
+    const rightVector = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forwardVector).normalize();
+    const moveDirection = new THREE.Vector3()
+      .addScaledVector(forwardVector, forwardInput)
+      .addScaledVector(rightVector, -steerInput)
+      .normalize();
 
-    const newStamina = THREE.MathUtils.clamp(stamina + (recovering ? recRate : -drain) * dt, 0, 1);
+    const exertion = (pulling ? 1 : 0.6) * Math.max(0, forwardInput);
+    const drain = (0.1 + surface.drag * 0.02) * exertion * (1 + fatigue * 0.6);
+    const recovering = (!pulling && forwardInput <= 0 && !braking) || keys.KeyR;
+    const recoveryRate = keys.KeyR ? 0.6 : 0.22;
+
+    const newStamina = THREE.MathUtils.clamp(
+      stamina + (recovering ? recoveryRate : -drain) * dt,
+      0,
+      1,
+    );
     const newFatigue = 1 - newStamina;
     setStamina(newStamina);
     setFatigue(newFatigue);
 
     // Apply forces
-    const effective = THREE.MathUtils.lerp(1, 0.3, newFatigue); // fatigue reduces output
+    const effectiveForce = THREE.MathUtils.lerp(1, 0.3, newFatigue);
     const basePull = 95; // N
-    const pullForce = basePull * effective * (pulling ? 1.7 : 1.0);
+    const pullForce = basePull * effectiveForce * (pulling ? 1.7 : 1);
 
-    // Buck moves kinematically by applying impulse to own body for traction feel
-    if (moveDir.lengthSq() > 0.01) {
-      buck.current.applyImpulse({ x: moveDir.x * pullForce * dt, y: 0, z: moveDir.z * pullForce * dt }, true);
-      // Face direction
-      const targetYaw = Math.atan2(moveDir.x, moveDir.z);
-      const cur = buck.current.rotation();
-      const yaw = THREE.MathUtils.lerp(cur.y, targetYaw, 0.15);
+    if (moveDirection.lengthSq() > 0.01) {
+      buck.current.applyImpulse(
+        {
+          x: moveDirection.x * pullForce * dt,
+          y: 0,
+          z: moveDirection.z * pullForce * dt,
+        },
+        true,
+      );
+
+      const targetYaw = Math.atan2(moveDirection.x, moveDirection.z);
+      const currentRotation = buck.current.rotation();
+      const yaw = THREE.MathUtils.lerp(currentRotation.y, targetYaw, 0.15);
       buck.current.setRotation({ x: 0, y: yaw, z: 0 }, true);
     }
 
     // Sled: drag resists motion based on surface; brake increases resistance
-    const vel = sled.current.linvel();
-    const speed = Math.hypot(vel.x, vel.z);
-    const dirVel = new THREE.Vector3(vel.x, 0, vel.z).normalize();
-    const drag = (surf.drag + (braking ? surf.brake * 6 : 0)) * speed;
-    sled.current.applyImpulse({ x: -dirVel.x * drag * dt, y: 0, z: -dirVel.z * drag * dt }, true);
+    const velocity = sled.current.linvel();
+    const speed = Math.hypot(velocity.x, velocity.z);
+    const velocityDirection = new THREE.Vector3(velocity.x, 0, velocity.z).normalize();
+    const drag = (surface.drag + (braking ? surface.brake * 6 : 0)) * speed;
+    sled.current.applyImpulse(
+      { x: -velocityDirection.x * drag * dt, y: 0, z: -velocityDirection.z * drag * dt },
+      true,
+    );
 
     // Steering torque (harder on ice)
-    const steerTorque = 30 * (1 - (surf.turn - 0.5));
-    if (steer !== 0 && speed > 0.2) sled.current.applyTorqueImpulse({ x: 0, y: -steer * steerTorque * dt, z: 0 }, true);
+    const steerTorque = 30 * (1 - (surface.turn - 0.5));
+    if (steerInput !== 0 && speed > 0.2) {
+      sled.current.applyTorqueImpulse({ x: 0, y: -steerInput * steerTorque * dt, z: 0 }, true);
+    }
 
     // Simple snag chance if grazing obstacles: monitor lateral velocity spikes
-    const latVel = Math.abs(new THREE.Vector3(-dirVel.z, 0, dirVel.x).dot(new THREE.Vector3(vel.x, 0, vel.z)));
-    setSnag(latVel > 6 && speed < 2);
+    const lateralVelocity = Math.abs(
+      new THREE.Vector3(-velocityDirection.z, 0, velocityDirection.x).dot(
+        new THREE.Vector3(velocity.x, 0, velocity.z),
+      ),
+    );
+    setSnag(lateralVelocity > 6 && speed < 2);
 
     // Simulate gentle uphill beyond z>70
     if (sled.current.translation().z > 70) {
-      sled.current.applyImpulse({ x: 0, y: 0, z: -15 * dt }, true); // gravity-like pull back
+      sled.current.applyImpulse({ x: 0, y: 0, z: -15 * dt }, true);
     }
 
-    // Cargo mass affects inertia
     sled.current.setAdditionalMass(cargoKg);
 
-    // UI hooks
     ui.current = { stamina: newStamina, fatigue: newFatigue, speed, zone: zone.type, snag };
-
   });
 
   return (
@@ -191,16 +295,20 @@ function BuckAndSled({ instinct, setInstinct, ui }) {
       </RigidBody>
 
       {/* Harness line (visual only) */}
-       <Harness a={buck} b={sled} />
+      <Harness a={buck} b={sled} />
     </>
   );
 }
 
 function UIOverlay({ uiRef, instinct }) {
   const [state, setState] = useState({ stamina: 1, fatigue: 0, speed: 0, zone: "packed", snag: false });
+
   useFrame(() => {
-    if (uiRef.current) setState(uiRef.current);
+    if (uiRef.current) {
+      setState(uiRef.current);
+    }
   });
+
   return (
     <Html position={[0, 0, 0]} center style={{ pointerEvents: "none" }}>
       <div className="fixed left-4 bottom-4 min-w-[260px] p-3 rounded-2xl shadow-lg bg-white/70 backdrop-blur">
@@ -229,17 +337,24 @@ function UIOverlay({ uiRef, instinct }) {
 export default function App() {
   const [instinct, setInstinct] = useState(false);
   const uiRef = useRef({});
+
   return (
     <div className="w-full h-full">
       <Canvas shadows camera={{ position: [8, 7, 12], fov: 55 }}>
         <color attach="background" args={[instinct ? "#dfe6ef" : "#eef5ff"]} />
         <hemisphereLight intensity={0.6} />
-        <directionalLight castShadow position={[6, 8, 4]} intensity={1.1} shadow-mapSize-width={2048} shadow-mapSize-height={2048} />
+        <directionalLight
+          castShadow
+          position={[6, 8, 4]}
+          intensity={1.1}
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+        />
 
         <Physics gravity={[0, -9.81, 0]}>
           <Terrain />
-          {ZONES.map((z, i) => (
-            <Zone key={i} zone={z} instinct={instinct} />
+          {ZONES.map((zone) => (
+            <Zone key={`${zone.type}-${zone.pos.join("-")}`} zone={zone} instinct={instinct} />
           ))}
           <BuckAndSled instinct={instinct} setInstinct={setInstinct} ui={uiRef} />
         </Physics>
@@ -259,7 +374,9 @@ export default function App() {
           <boxGeometry args={[3, 2, 3]} />
           <meshStandardMaterial color={instinct ? "#ffffff" : "#9f947e"} />
         </mesh>
-        <Text position={[0, 2.6, 110]} fontSize={0.5} color="#333">Cabin</Text>
+        <Text position={[0, 2.6, 110]} fontSize={0.5} color="#333">
+          Cabin
+        </Text>
       </Canvas>
     </div>
   );
