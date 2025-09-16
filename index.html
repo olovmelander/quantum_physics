@@ -3,277 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Classical vs. Quantum Physics!</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            margin: 0;
-            padding: 0;
-            background-color: #f0f2f5;
-            color: #333;
-        }
-        header {
-            background: #fff;
-            padding: 1rem;
-            text-align: center;
-            border-bottom: 1px solid #ddd;
-            position: relative;
-        }
-        #theme-toggle-btn {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            padding: 0.5rem 1rem;
-            border: 1px solid #ddd;
-            background-color: #fff;
-            color: #333;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-        h1, h2, h3 {
-            margin: 0;
-        }
-        main {
-            padding: 1rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        #introduction {
-            background: #fff;
-            padding: 2rem;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-        }
-        #animation-container {
-            display: flex;
-            gap: 2rem;
-            justify-content: center;
-        }
-        .animation-box {
-            background: #fff;
-            border-radius: 8px;
-            padding: 1rem;
-            width: 45%;
-            min-height: 300px;
-            text-align: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        #classical-animation {
-            position: relative;
-            overflow: hidden;
-        }
-        #classical-ball {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 20px;
-            height: 20px;
-            background-color: #3498db;
-            border-radius: 50%;
-            animation: classical-trajectory 4s linear infinite;
-        }
-        @keyframes classical-trajectory {
-            0% {
-                transform: translate(0, 0);
-            }
-            25% {
-                transform: translate(100px, -150px);
-            }
-            50% {
-                transform: translate(200px, 0);
-            }
-            75% {
-                transform: translate(300px, -150px);
-            }
-            100% {
-                transform: translate(400px, 0);
-            }
-        }
-        canvas {
-            background-color: #000;
-            border-radius: 4px;
-        }
-        footer {
-            text-align: center;
-            padding: 1rem;
-            margin-top: 2rem;
-            font-size: 0.9em;
-            color: #777;
-        }
-        @media (max-width: 768px) {
-            #animation-container {
-                flex-direction: column;
-            }
-            .animation-box {
-                width: 100%;
-            }
-        }
-
-        /* Dark Mode Styles */
-        body.dark-mode {
-            background-color: #121212;
-            color: #e0e0e0;
-        }
-        body.dark-mode header {
-            background: #1e1e1e;
-            border-bottom: 1px solid #333;
-        }
-        body.dark-mode #introduction,
-        body.dark-mode .animation-box {
-            background: #1e1e1e;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-        }
-        body.dark-mode footer {
-            color: #aaa;
-        }
-        body.dark-mode #theme-toggle-btn {
-            background-color: #2c2c2c;
-            border-color: #444;
-            color: #e0e0e0;
-        }
-    </style>
+    <title>Quantum Leap: A Physics Game</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <header>
-        <h1>Classical vs. Quantum Physics</h1>
+        <h1>Quantum Leap</h1>
         <button id="theme-toggle-btn">Switch to Dark Mode</button>
     </header>
     <main>
         <section id="introduction">
-            <h2>The Two Worlds of Physics</h2>
-            <p><strong>Classical Physics</strong> describes the world we see every day. Think of a thrown ball or a planet orbiting the sun. Its motion is predictable; if you know its position and velocity, you can calculate its exact path. It's deterministic and continuous.</p>
-            <p><strong>Quantum Physics</strong>, on the other hand, governs the bizarre world of atoms and particles. Here, things are not so certain. A particle doesn't have a definite position until it's measured. Instead, it exists in a "probability wave" of possible locations. It's probabilistic and quantized, meaning energy and other properties come in discrete packets.</p>
+            <h2>Welcome to Quantum Leap!</h2>
+            <p>This is a puzzle-platformer based on the quantum principle of <strong>superposition</strong>. In the quantum world, a particle can exist in multiple places at once until it's observed. Use this ability to your advantage!</p>
+            <p><strong>How to Play:</strong> Use the arrow keys to move and jump. Press 'S' to enter superposition, which will show you possible future locations. Click on one of the 'ghosts' to collapse your position and teleport there. Can you navigate the void?</p>
         </section>
         <section id="animation-container">
-            <div class="animation-box" id="classical-animation">
-                <h3>Classical World</h3>
-                <div id="classical-ball"></div>
-            </div>
             <div class="animation-box" id="quantum-animation">
-                <h3>Quantum World</h3>
+                <h3>Quantum Leap Game</h3>
                 <canvas id="quantum-canvas"></canvas>
             </div>
         </section>
     </main>
     <footer>
-        <p>A simple MVP demo.</p>
+        <p>A game by Jules.</p>
     </footer>
 
-    <script>
-        const canvas = document.getElementById('quantum-canvas');
-        const ctx = canvas.getContext('2d');
-        let width, height;
-        let particles = [];
-
-        function resizeCanvas() {
-            const container = document.getElementById('quantum-animation');
-            width = canvas.width = container.clientWidth - 2 * 16; // 2 * padding
-            height = canvas.height = 250;
-        }
-
-        class Particle {
-            constructor() {
-                this.x = Math.random() * width;
-                this.y = Math.random() * height;
-                this.vx = (Math.random() - 0.5) * 2;
-                this.vy = (Math.random() - 0.5) * 2;
-                this.radius = 20 + Math.random() * 20; // Represents the uncertainty
-                this.isCollapsed = false;
-            }
-
-            update() {
-                if (this.isCollapsed) return;
-
-                this.x += this.vx;
-                this.y += this.vy;
-
-                if (this.x < 0 || this.x > width) this.vx *= -1;
-                if (this.y < 0 || this.y > height) this.vy *= -1;
-            }
-
-            draw() {
-                ctx.beginPath();
-                if (this.isCollapsed) {
-                    // Draw a definite point
-                    ctx.fillStyle = 'rgba(255, 255, 255, 1)';
-                    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
-                    ctx.fill();
-                } else {
-                    // Draw a probability wave
-                    const gradient = ctx.createRadialGradient(this.x, this.y, 1, this.x, this.y, this.radius);
-                    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
-                    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                    ctx.fillStyle = gradient;
-                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-
-            collapse() {
-                this.isCollapsed = true;
-                setTimeout(() => {
-                    this.isCollapsed = false;
-                    this.radius = 20 + Math.random() * 20;
-                }, 1000); // Revert to wave state after 1s
-            }
-        }
-
-        function init() {
-            resizeCanvas();
-            particles = [];
-            for (let i = 0; i < 3; i++) {
-                particles.push(new Particle());
-            }
-            animate();
-        }
-
-        function animate() {
-            ctx.clearRect(0, 0, width, height);
-            particles.forEach(p => {
-                p.update();
-                p.draw();
-            });
-            requestAnimationFrame(animate);
-        }
-
-        canvas.addEventListener('click', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            // Find the closest particle and collapse it
-            let closestParticle = null;
-            let minDistance = Infinity;
-
-            particles.forEach(p => {
-                const distance = Math.sqrt((p.x - x)**2 + (p.y - y)**2);
-                if (distance < p.radius && distance < minDistance) {
-                    minDistance = distance;
-                    closestParticle = p;
-                }
-            });
-
-            if (closestParticle) {
-                closestParticle.collapse();
-            }
-        });
-
-        window.addEventListener('resize', init);
-
-        init();
-
-        const themeToggleButton = document.getElementById('theme-toggle-btn');
-        const body = document.body;
-
-        themeToggleButton.addEventListener('click', () => {
-            body.classList.toggle('dark-mode');
-            if (body.classList.contains('dark-mode')) {
-                themeToggleButton.textContent = 'Switch to Light Mode';
-            } else {
-                themeToggleButton.textContent = 'Switch to Dark Mode';
-            }
-        });
-    </script>
+    <script src="game.js"></script>
 </body>
 </html>
