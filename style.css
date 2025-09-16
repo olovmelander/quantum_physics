@@ -1,0 +1,127 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+    background-color: #f0f2f5;
+    color: #333;
+}
+header {
+    background: #fff;
+    padding: 1rem;
+    text-align: center;
+    border-bottom: 1px solid #ddd;
+    position: relative;
+}
+#theme-toggle-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background-color: #fff;
+    color: #333;
+    cursor: pointer;
+    border-radius: 5px;
+}
+h1, h2, h3 {
+    margin: 0;
+}
+main {
+    padding: 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+#introduction {
+    background: #fff;
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+#animation-container {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+}
+.animation-box {
+    background: #fff;
+    border-radius: 8px;
+    padding: 1rem;
+    width: 45%;
+    min-height: 300px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+#classical-animation {
+    position: relative;
+    overflow: hidden;
+}
+#classical-ball {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 20px;
+    height: 20px;
+    background-color: #3498db;
+    border-radius: 50%;
+    animation: classical-trajectory 4s linear infinite;
+}
+@keyframes classical-trajectory {
+    0% {
+        transform: translate(0, 0);
+    }
+    25% {
+        transform: translate(100px, -150px);
+    }
+    50% {
+        transform: translate(200px, 0);
+    }
+    75% {
+        transform: translate(300px, -150px);
+    }
+    100% {
+        transform: translate(400px, 0);
+    }
+}
+canvas {
+    background-color: #000;
+    border-radius: 4px;
+}
+footer {
+    text-align: center;
+    padding: 1rem;
+    margin-top: 2rem;
+    font-size: 0.9em;
+    color: #777;
+}
+@media (max-width: 768px) {
+    #animation-container {
+        flex-direction: column;
+    }
+    .animation-box {
+        width: 100%;
+    }
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+    background-color: #121212;
+    color: #e0e0e0;
+}
+body.dark-mode header {
+    background: #1e1e1e;
+    border-bottom: 1px solid #333;
+}
+body.dark-mode #introduction,
+body.dark-mode .animation-box {
+    background: #1e1e1e;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+body.dark-mode footer {
+    color: #aaa;
+}
+body.dark-mode #theme-toggle-btn {
+    background-color: #2c2c2c;
+    border-color: #444;
+    color: #e0e0e0;
+}
