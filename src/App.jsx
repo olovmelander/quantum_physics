@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Environment, Effects, Float, Stars, Html, Text } from "@react-three/drei";
 import { Physics, RigidBody, CylinderCollider, CuboidCollider, useSphericalJoint } from "@react-three/rapier";
+import { init as initRapier } from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 
 /**
@@ -65,6 +66,33 @@ function surfaceParams(type) {
     default:
       return { drag: 8, turn: 1, brake: 1 };
   }
+}
+
+function useRapierReady() {
+  const [state, setState] = useState({ ready: false, error: null });
+
+  useEffect(() => {
+    let active = true;
+
+    initRapier()
+      .then(() => {
+        if (active) {
+          setState({ ready: true, error: null });
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to initialise the Rapier physics engine", error);
+        if (active) {
+          setState({ ready: false, error });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return state;
 }
 
 function Zone({ zone, instinct }) {
@@ -337,6 +365,7 @@ function UIOverlay({ uiRef, instinct }) {
 export default function App() {
   const [instinct, setInstinct] = useState(false);
   const uiRef = useRef({});
+  const { ready: physicsReady, error: physicsError } = useRapierReady();
 
   return (
     <div className="w-full h-full">
@@ -351,13 +380,34 @@ export default function App() {
           shadow-mapSize-height={2048}
         />
 
-        <Physics gravity={[0, -9.81, 0]}>
-          <Terrain />
-          {ZONES.map((zone) => (
-            <Zone key={`${zone.type}-${zone.pos.join("-")}`} zone={zone} instinct={instinct} />
-          ))}
-          <BuckAndSled instinct={instinct} setInstinct={setInstinct} ui={uiRef} />
-        </Physics>
+        {physicsReady && (
+          <Physics gravity={[0, -9.81, 0]}>
+            <Terrain />
+            {ZONES.map((zone) => (
+              <Zone key={`${zone.type}-${zone.pos.join("-")}`} zone={zone} instinct={instinct} />
+            ))}
+            <BuckAndSled instinct={instinct} setInstinct={setInstinct} ui={uiRef} />
+          </Physics>
+        )}
+
+        {!physicsReady && !physicsError && (
+          <Html center>
+            <div className="rounded-2xl bg-white/80 px-4 py-3 text-sm font-medium text-slate-700 shadow-lg">
+              Preparing the physics simulation…
+            </div>
+          </Html>
+        )}
+
+        {physicsError && (
+          <Html center>
+            <div className="max-w-xs rounded-2xl bg-white/80 px-4 py-3 text-sm text-red-700 shadow-lg">
+              <p className="font-semibold">Physics engine failed to load.</p>
+              <p className="mt-1 text-xs text-slate-700">
+                Please refresh the page or check your connection before trying again.
+              </p>
+            </div>
+          </Html>
+        )}
 
         {/* Instinct Post FX: simple desaturation via color/lighting bias */}
         <Effects disableGamma>
