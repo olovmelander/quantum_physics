@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment, Effects, Float, Stars, Html, Text } from "@react-three/drei";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls, Environment, Float, Html, Stars, Text } from "@react-three/drei";
 import { Physics, RigidBody, CylinderCollider, CuboidCollider, useSphericalJoint } from "@react-three/rapier";
-import { init as initRapier } from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 
 /**
@@ -45,6 +44,51 @@ function useKeyboard() {
   return keys;
 }
 
+function useTouchDevice() {
+  const [isTouch, setIsTouch] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const determine = () => {
+      const navigatorInfo = typeof navigator !== "undefined" ? navigator : { maxTouchPoints: 0, userAgent: "" };
+      const pointerCoarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+      setIsTouch(
+        "ontouchstart" in window ||
+          pointerCoarse ||
+          (navigatorInfo.maxTouchPoints ?? 0) > 0 ||
+          /Mobi|Android|iP(ad|hone|od)/i.test(navigatorInfo.userAgent ?? ""),
+      );
+    };
+
+    determine();
+
+    let mediaQuery;
+    if (typeof window.matchMedia === "function") {
+      mediaQuery = window.matchMedia("(pointer: coarse)");
+      const handler = () => determine();
+      try {
+        mediaQuery.addEventListener("change", handler);
+      } catch (error) {
+        // Safari < 14
+        mediaQuery.addListener(handler);
+      }
+
+      return () => {
+        try {
+          mediaQuery.removeEventListener("change", handler);
+        } catch (error) {
+          mediaQuery.removeListener(handler);
+        }
+      };
+    }
+
+    return undefined;
+  }, []);
+
+  return isTouch;
+}
+
 // Surface zones with different resistance/turn control
 const ZONES = [
   { pos: [0, 0, 0], size: [60, 1, 60], type: "packed", color: "#aaccee" }, // packed snow main lake
@@ -74,9 +118,11 @@ function useRapierReady() {
   useEffect(() => {
     let active = true;
 
-    initRapier()
+    import("@dimforge/rapier3d-compat")
+      .then((module) => module.init())
       .then(() => {
         if (active) {
+          console.info("Rapier physics engine initialised");
           setState({ ready: true, error: null });
         }
       })
@@ -124,7 +170,7 @@ function Terrain() {
       {/* Ground */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
         <planeGeometry args={[200, 200, 1, 1]} />
-        <meshStandardMaterial color="#ffffff" />
+        <meshStandardMaterial color="#dce6f5" />
       </mesh>
 
       {/* Snow mounds / rocks */}
@@ -166,7 +212,17 @@ function Harness({ a, b }) {
   );
 }
 
-function BuckAndSled({ instinct, setInstinct, ui }) {
+function CameraRig({ target }) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    camera.lookAt(...target);
+  }, [camera, target]);
+
+  return null;
+}
+
+function BuckAndSled({ instinct, setInstinct, ui, controls }) {
   const keys = useKeyboard();
   const buck = useRef();
   const sled = useRef();
@@ -201,11 +257,26 @@ function BuckAndSled({ instinct, setInstinct, ui }) {
     const surface = surfaceParams(zone.type);
 
     // Input
-    const forwardInput = (keys.KeyW ? 1 : 0) + (keys.KeyS ? -1 : 0);
-    const steerInput = (keys.KeyA ? 1 : 0) + (keys.KeyD ? -1 : 0);
-    const pulling = keys.ShiftLeft || keys.ShiftRight;
-    const braking = keys.ControlLeft || keys.ControlRight;
-    const qPressed = Boolean(keys.KeyQ);
+    const forwardInputRaw = (keys.KeyW ? 1 : 0) + (keys.KeyS ? -1 : 0);
+    const steerInputRaw = (keys.KeyA ? 1 : 0) + (keys.KeyD ? -1 : 0);
+    const pullingKeys = keys.ShiftLeft || keys.ShiftRight;
+    const brakingKeys = keys.ControlLeft || keys.ControlRight;
+    const restKey = Boolean(keys.KeyR);
+    const qPressedKeys = Boolean(keys.KeyQ);
+
+    const forwardOverride = controls?.forward ?? 0;
+    const steerOverride = controls?.steer ?? 0;
+    const pullingOverride = Boolean(controls?.pull);
+    const brakingOverride = Boolean(controls?.brake);
+    const restOverride = Boolean(controls?.rest);
+    const instinctOverride = Boolean(controls?.instinct);
+
+    const forwardInput = THREE.MathUtils.clamp(forwardInputRaw + forwardOverride, -1, 1);
+    const steerInput = THREE.MathUtils.clamp(steerInputRaw + steerOverride, -1, 1);
+    const pulling = pullingKeys || pullingOverride;
+    const braking = brakingKeys || brakingOverride;
+    const restActive = restKey || restOverride;
+    const qPressed = qPressedKeys || instinctOverride;
 
     setInstinct((prev) => (prev === qPressed ? prev : qPressed));
 
@@ -224,8 +295,8 @@ function BuckAndSled({ instinct, setInstinct, ui }) {
 
     const exertion = (pulling ? 1 : 0.6) * Math.max(0, forwardInput);
     const drain = (0.1 + surface.drag * 0.02) * exertion * (1 + fatigue * 0.6);
-    const recovering = (!pulling && forwardInput <= 0 && !braking) || keys.KeyR;
-    const recoveryRate = keys.KeyR ? 0.6 : 0.22;
+    const recovering = (!pulling && forwardInput <= 0 && !braking) || restActive;
+    const recoveryRate = restActive ? 0.6 : 0.22;
 
     const newStamina = THREE.MathUtils.clamp(
       stamina + (recovering ? recoveryRate : -drain) * dt,
@@ -328,12 +399,12 @@ function BuckAndSled({ instinct, setInstinct, ui }) {
   );
 }
 
-function UIOverlay({ uiRef, instinct }) {
+function UIOverlay({ uiRef, instinct, touch }) {
   const [state, setState] = useState({ stamina: 1, fatigue: 0, speed: 0, zone: "packed", snag: false });
 
   useFrame(() => {
     if (uiRef.current) {
-      setState(uiRef.current);
+      setState((prev) => ({ ...prev, ...uiRef.current }));
     }
   });
 
@@ -352,13 +423,108 @@ function UIOverlay({ uiRef, instinct }) {
         {instinct && <div className="mt-2 text-xs text-indigo-700">Instinct Mode</div>}
       </div>
 
-      <div className="fixed right-4 bottom-4 p-3 rounded-2xl shadow bg-white/70 backdrop-blur text-xs leading-5">
-        <div className="font-semibold mb-1">Controls</div>
-        <div>W/S: move • A/D: steer</div>
-        <div>Shift: Pull • Ctrl: Brake</div>
-        <div>Q: Instinct • R: Rest</div>
-      </div>
+      {!touch && (
+        <div className="fixed right-4 bottom-4 p-3 rounded-2xl shadow bg-white/70 backdrop-blur text-xs leading-5">
+          <div className="font-semibold mb-1">Controls</div>
+          <div>W/S: move • A/D: steer</div>
+          <div>Shift: Pull • Ctrl: Brake</div>
+          <div>Q: Instinct • R: Rest</div>
+        </div>
+      )}
     </Html>
+  );
+}
+
+function TouchControls({ onChange }) {
+  const [buttons, setButtons] = useState({
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    pull: false,
+    brake: false,
+    rest: false,
+    instinct: false,
+  });
+
+  useEffect(() => {
+    onChange({
+      forward: (buttons.forward ? 1 : 0) + (buttons.backward ? -1 : 0),
+      steer: (buttons.left ? 1 : 0) + (buttons.right ? -1 : 0),
+      pull: buttons.pull,
+      brake: buttons.brake,
+      rest: buttons.rest,
+      instinct: buttons.instinct,
+    });
+  }, [buttons, onChange]);
+
+  const toggle = (name, active) => {
+    setButtons((prev) => (prev[name] === active ? prev : { ...prev, [name]: active }));
+  };
+
+  const handleChange = (name) => (active) => toggle(name, active);
+
+  return (
+    <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-4">
+      <div className="pointer-events-auto select-none touch-none rounded-3xl bg-white/65 p-4 shadow-xl backdrop-blur">
+        <div className="text-center text-sm font-semibold text-slate-700">Touch Controls</div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs font-medium text-slate-700">
+          <TouchButton label="" disabled />
+          <TouchButton label="Forward" onChange={handleChange("forward")} />
+          <TouchButton label="" disabled />
+          <TouchButton label="Left" onChange={handleChange("left")} />
+          <TouchButton label="Rest" onChange={handleChange("rest")} />
+          <TouchButton label="Right" onChange={handleChange("right")} />
+          <TouchButton label="" disabled />
+          <TouchButton label="Back" onChange={handleChange("backward")} />
+          <TouchButton label="" disabled />
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs font-medium text-slate-700">
+          <TouchButton label="Pull" onChange={handleChange("pull")} />
+          <TouchButton label="Brake" onChange={handleChange("brake")} />
+          <TouchButton label="Instinct" onChange={handleChange("instinct")} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TouchButton({ label, onChange, disabled }) {
+  const handlePointerDown = (event) => {
+    if (disabled) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    onChange?.(true);
+  };
+
+  const handlePointerUp = (event) => {
+    if (disabled) return;
+    event.preventDefault();
+    onChange?.(false);
+  };
+
+  const handlePointerLeave = (event) => {
+    if (disabled) return;
+    event.preventDefault();
+    onChange?.(false);
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerLeave}
+      onPointerLeave={handlePointerLeave}
+      onContextMenu={(event) => event.preventDefault()}
+      className={`rounded-2xl border border-white/60 bg-white/70 px-3 py-2 shadow transition ${
+        disabled ? "opacity-0" : "active:bg-blue-100"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -366,28 +532,82 @@ export default function App() {
   const [instinct, setInstinct] = useState(false);
   const uiRef = useRef({});
   const { ready: physicsReady, error: physicsError } = useRapierReady();
+  const isTouch = useTouchDevice();
+  const controlsRef = useRef({ forward: 0, steer: 0, pull: false, brake: false, rest: false, instinct: false });
+  const [, forceUpdate] = useState(0);
+  const [canvasElement, setCanvasElement] = useState(null);
+  const [contextLost, setContextLost] = useState(false);
+
+  const handleTouchControls = useCallback((nextControls) => {
+    controlsRef.current = nextControls;
+    forceUpdate((value) => value + 1);
+  }, []);
+
+  const handleCanvasCreated = useCallback((state) => {
+    setCanvasElement(state.gl.domElement);
+  }, []);
+
+  useEffect(() => {
+    if (!canvasElement) return;
+
+    const handleLost = (event) => {
+      event.preventDefault();
+      setContextLost(true);
+    };
+
+    const handleRestore = () => {
+      setContextLost(false);
+    };
+
+    canvasElement.addEventListener("webglcontextlost", handleLost, { passive: false });
+    canvasElement.addEventListener("webglcontextrestored", handleRestore);
+
+    return () => {
+      canvasElement.removeEventListener("webglcontextlost", handleLost);
+      canvasElement.removeEventListener("webglcontextrestored", handleRestore);
+    };
+  }, [canvasElement]);
 
   return (
-    <div className="w-full h-full">
-      <Canvas shadows camera={{ position: [8, 7, 12], fov: 55 }}>
+    <div className="relative h-full w-full">
+      <Canvas
+        shadows={!isTouch}
+        camera={{ position: [8, 7, 12], fov: 55 }}
+        dpr={isTouch ? [1, 1.2] : [1, 2]}
+        gl={{
+          powerPreference: isTouch ? "low-power" : "high-performance",
+          antialias: !isTouch,
+          preserveDrawingBuffer: false,
+          failIfMajorPerformanceCaveat: false,
+        }}
+        onCreated={handleCanvasCreated}
+      >
         <color attach="background" args={[instinct ? "#dfe6ef" : "#eef5ff"]} />
+        <CameraRig target={[0, 0.6, -6]} />
         <hemisphereLight intensity={0.6} />
         <directionalLight
-          castShadow
+          castShadow={!isTouch}
           position={[6, 8, 4]}
           intensity={1.1}
-          shadow-mapSize-width={2048}
-          shadow-mapSize-height={2048}
+          shadow-mapSize-width={isTouch ? 1024 : 2048}
+          shadow-mapSize-height={isTouch ? 1024 : 2048}
         />
 
         {physicsReady && (
-          <Physics gravity={[0, -9.81, 0]}>
-            <Terrain />
-            {ZONES.map((zone) => (
-              <Zone key={`${zone.type}-${zone.pos.join("-")}`} zone={zone} instinct={instinct} />
-            ))}
-            <BuckAndSled instinct={instinct} setInstinct={setInstinct} ui={uiRef} />
-          </Physics>
+          <Suspense fallback={null}>
+            <Physics gravity={[0, -9.81, 0]}>
+              <Terrain />
+              {ZONES.map((zone) => (
+                <Zone key={`${zone.type}-${zone.pos.join("-")}`} zone={zone} instinct={instinct} />
+              ))}
+              <BuckAndSled
+                instinct={instinct}
+                setInstinct={setInstinct}
+                ui={uiRef}
+                controls={controlsRef.current}
+              />
+            </Physics>
+          </Suspense>
         )}
 
         {!physicsReady && !physicsError && (
@@ -409,15 +629,10 @@ export default function App() {
           </Html>
         )}
 
-        {/* Instinct Post FX: simple desaturation via color/lighting bias */}
-        <Effects disableGamma>
-          {/* keep effects minimal for compatibility */}
-        </Effects>
-
-        <OrbitControls enablePan={false} minDistance={6} maxDistance={24} target={[0, 0.6, -6]} />
-        <Stars radius={120} depth={20} count={2000} factor={4} fade />
-        <Environment preset="snow" />
-        <UIOverlay uiRef={uiRef} instinct={instinct} />
+        {!isTouch && <OrbitControls enablePan={false} minDistance={6} maxDistance={24} target={[0, 0.6, -6]} />}
+        <Stars radius={120} depth={20} count={isTouch ? 800 : 2000} factor={4} fade />
+        <Environment preset="forest" />
+        <UIOverlay uiRef={uiRef} instinct={instinct} touch={isTouch} />
 
         {/* Goal marker (cabin stand-in) */}
         <mesh position={[0, 1.2, 110]} castShadow>
@@ -428,6 +643,18 @@ export default function App() {
           Cabin
         </Text>
       </Canvas>
+      {isTouch && <TouchControls onChange={handleTouchControls} />}
+      {contextLost && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+          <div className="pointer-events-auto max-w-xs rounded-3xl bg-white/85 p-4 text-center text-sm text-slate-700 shadow-xl backdrop-blur">
+            <p className="font-semibold">3D paused to protect your device.</p>
+            <p className="mt-2 text-xs leading-5">
+              Reload the page or close other tabs/apps before trying again. Lower-power mode will resume automatically
+              after a refresh.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

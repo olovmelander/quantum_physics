@@ -3,17 +3,41 @@ import initWasm from '@dimforge/rapier3d-compat/rapier_wasm3d.js'
 import wasmUrl from '@dimforge/rapier3d-compat/rapier_wasm3d_bg.wasm?url'
 
 let initPromise
+let wasmReady = false
 
 export async function init(options = {}) {
   if (!initPromise) {
     const wasmSource = options.wasm ?? wasmUrl
-    initPromise = initWasm(wasmSource).catch((error) => {
-      initPromise = undefined
-      throw error
-    })
+    initPromise = initWasm(wasmSource)
+      .then((instance) => {
+        wasmReady = true
+        return instance
+      })
+      .catch((error) => {
+        initPromise = undefined
+        throw error
+      })
   }
 
   return initPromise
+}
+
+class SuspenseEventQueue {
+  constructor(autoDrain) {
+    if (!wasmReady) {
+      throw initPromise ?? init()
+    }
+
+    try {
+      return new RapierModule.EventQueue(autoDrain)
+    } catch (error) {
+      if (String(error).includes('raweventqueue_new')) {
+        wasmReady = false
+        throw initPromise ?? init()
+      }
+      throw error
+    }
+  }
 }
 
 const patchedDefault = {
@@ -42,7 +66,6 @@ export {
   DebugRenderBuffers,
   DebugRenderPipeline,
   DynamicRayCastVehicleController,
-  EventQueue,
   FeatureType,
   FixedImpulseJoint,
   FixedMultibodyJoint,
@@ -116,4 +139,5 @@ export {
   version,
 } from '@dimforge/rapier3d-compat/rapier.es.js'
 
+export { SuspenseEventQueue as EventQueue }
 export default patchedDefault
