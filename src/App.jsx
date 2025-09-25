@@ -69,7 +69,7 @@ function useTouchDevice() {
       const handler = () => determine();
       try {
         mediaQuery.addEventListener("change", handler);
-      } catch (error) {
+      } catch {
         // Safari < 14
         mediaQuery.addListener(handler);
       }
@@ -77,7 +77,7 @@ function useTouchDevice() {
       return () => {
         try {
           mediaQuery.removeEventListener("change", handler);
-        } catch (error) {
+        } catch {
           mediaQuery.removeListener(handler);
         }
       };
