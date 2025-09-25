@@ -8,6 +8,10 @@ const rapierCompatPath = fileURLToPath(new URL('./src/lib/rapier-compat.js', imp
 export default defineConfig({
   base: '/quantum_physics/',
   plugins: [react()],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
   resolve: {
     alias: [
       {
