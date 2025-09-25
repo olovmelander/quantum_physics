@@ -6,6 +6,7 @@ const rapierCompatPath = fileURLToPath(new URL('./src/lib/rapier-compat.js', imp
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/quantum_physics/',
   plugins: [react()],
   resolve: {
     alias: [
