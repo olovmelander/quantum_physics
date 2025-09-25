@@ -230,6 +230,11 @@ function BuckAndSled({ instinct, setInstinct, ui, controls }) {
   const [fatigue, setFatigue] = useState(0);
   const cargoKg = 80;
   const [snag, setSnag] = useState(false);
+  const lastInstinctRef = useRef(instinct);
+
+  useEffect(() => {
+    lastInstinctRef.current = instinct;
+  }, [instinct]);
 
   // Point-to-point joint to simulate the tug connection
   useSphericalJoint(buck, sled, [
@@ -278,7 +283,10 @@ function BuckAndSled({ instinct, setInstinct, ui, controls }) {
     const restActive = restKey || restOverride;
     const qPressed = qPressedKeys || instinctOverride;
 
-    setInstinct((prev) => (prev === qPressed ? prev : qPressed));
+    if (lastInstinctRef.current !== qPressed) {
+      lastInstinctRef.current = qPressed;
+      setInstinct(qPressed);
+    }
 
     // Orientation: face move direction smoothly
     const camera = state.camera;
